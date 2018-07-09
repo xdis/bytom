@@ -1,22 +1,8 @@
 package tensority
 
-// #cgo windows,386 CFLAGS: -I.
-// #cgo windows,386 LDFLAGS: -L./lib/ -l:cSimdTs_win32.o -lstdc++ -lgomp -lpthread
-// #cgo windows,amd64 CFLAGS: -I.
-// #cgo windows,amd64 LDFLAGS: -L./lib/ -l:cSimdTs_win64.o -lstdc++ -lgomp -lpthread
-// #cgo linux,386 CFLAGS: -I.
-// #cgo linux,386 LDFLAGS: -L./lib/ -l:cSimdTs_linux32.o -lstdc++ -lgomp -lpthread
-// #cgo linux,amd64 CFLAGS: -I.
-// #cgo linux,amd64 LDFLAGS: -L./lib/ -l:cSimdTs_linux64.o -lstdc++ -lgomp -lpthread
-// #cgo darwin,amd64 CFLAGS: -I. -I/usr/local/opt/llvm/include
-// #cgo darwin,amd64 LDFLAGS: -L./lib/ -lcSimdTs_darwin64.o -lstdc++ -lomp -L/usr/local/opt/llvm/lib
-// #include "./lib/cSimdTs.h"
-import "C"
-
 import (
-	"runtime"
-	"unsafe"
-	"fmt"
+	// "runtime"
+	"plugin"
 
 	"github.com/golang/groupcache/lru"
 
@@ -32,41 +18,46 @@ import (
 
 const maxAIHashCached = 64
 
-var UseSIMD = false
+var UseSIMD = true
 
-func legacyAlgorithm(hash, seed *bc.Hash) *bc.Hash {
+func legacyAlgorithm(bh, seed *bc.Hash) *bc.Hash {
 	cache := calcSeedCache(seed.Bytes())
-	data := mulMatrix(hash.Bytes(), cache)
+	data := mulMatrix(bh.Bytes(), cache)
 	return hashMatrix(data)
 }
 
-func cgoAlgorithm(blockHeader, seed *bc.Hash) *bc.Hash {
-	bhBytes := blockHeader.Bytes()
-	sdBytes := seed.Bytes()
+func cgoAlgorithm(bh, seed *bc.Hash) *bc.Hash {
+	p, err := plugin.Open("plugin_name.so")
+	if err != nil {
+	panic(err)
+	}
+	v, err := p.Lookup("bh")
+	if err != nil {
+	panic(err)
+	}
+	f, err := p.Lookup("F")
+	if err != nil {
+	panic(err)
+	}
 
-	// Get the array pointers from the corresponding slices
-	bhPtr := (*C.uchar)(unsafe.Pointer(&bhBytes[0]))
-	seedPtr := (*C.uchar)(unsafe.Pointer(&sdBytes[0]))
+	*v.(*int) = 7
+	f.(func())() // prints "Hello, number 7"
 
-	resPtr := C.SimdTs(bhPtr, seedPtr)
-
-	res := bc.NewHash(*(*[32]byte)(unsafe.Pointer(resPtr)))
-	return &res
+	return bh
 }
 
-func algorithm(hash, seed *bc.Hash) *bc.Hash {
-	if (runtime.GOOS == "windows" || runtime.GOOS == "linux" || (runtime.GOOS == "darwin" && runtime.GOARCH == "amd64")) /*&& cfg.Config.Simd.Enable*/ {
+func algorithm(bh, seed *bc.Hash) *bc.Hash {
+	if false {
 		log.Info("hhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhh")
-		fmt.Println(UseSIMD)
-		return cgoAlgorithm(hash, seed)
+		return cgoAlgorithm(bh, seed)
 	} else {
-		return legacyAlgorithm(hash, seed)
+		return legacyAlgorithm(bh, seed)
 	}
 }
 
-func calcCacheKey(hash, seed *bc.Hash) *bc.Hash {
+func calcCacheKey(bh, seed *bc.Hash) *bc.Hash {
 	var b32 [32]byte
-	sha3pool.Sum256(b32[:], append(hash.Bytes(), seed.Bytes()...))
+	sha3pool.Sum256(b32[:], append(bh.Bytes(), seed.Bytes()...))
 	key := bc.NewHash(b32)
 	return &key
 }
@@ -82,18 +73,18 @@ func NewCache() *Cache {
 }
 
 // AddCache is used for add tensority calculate result
-func (a *Cache) AddCache(hash, seed, result *bc.Hash) {
-	key := calcCacheKey(hash, seed)
+func (a *Cache) AddCache(bh, seed, result *bc.Hash) {
+	key := calcCacheKey(bh, seed)
 	a.lruCache.Add(*key, result)
 }
 
 // Hash is the real entry for call tensority algorithm
-func (a *Cache) Hash(hash, seed *bc.Hash) *bc.Hash {
-	key := calcCacheKey(hash, seed)
+func (a *Cache) Hash(bh, seed *bc.Hash) *bc.Hash {
+	key := calcCacheKey(bh, seed)
 	if v, ok := a.lruCache.Get(*key); ok {
 		return v.(*bc.Hash)
 	}
-	return algorithm(hash, seed)
+	return algorithm(bh, seed)
 }
 
 // AIHash is created for let different package share same cache
