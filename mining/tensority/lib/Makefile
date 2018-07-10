@@ -15,18 +15,20 @@ ifeq ($(OS),linux)
     CC_SUF = g++
 endif
 
-CCFLAGS += -std=c++11 -pthread -mavx2 -O3 -fopenmp
+CCFLAGS += -std=c++11 -pthread -mavx2 -O3 -fopenmp -fPIC
 
 .PHONY: clean
 
 all:
-	OS=win 	   BITS=32 make $(TARGET)
-	OS=win     BITS=64 make $(TARGET)
-	OS=linux   BITS=32 make $(TARGET)
+	# OS=win 	   BITS=32 make $(TARGET)
+	# OS=win     BITS=64 make $(TARGET)
+	# OS=linux   BITS=32 make $(TARGET)
 	OS=linux   BITS=64 make $(TARGET)
+	go build -buildmode=plugin -o plugin.so main.go
 
 $(TARGET): $(TARGET).cpp
-	$(CC_PRE)-$(CC_MI)-$(CC_SUF) -o $@_$(OS)$(BITS).o -c $^ $(CCFLAGS)
+	g++ -o $@_$(OS)$(BITS).o -c $^ $(CCFLAGS)  #--shared???
+	# $(CC_PRE)-$(CC_MI)-$(CC_SUF) -o $@_$(OS)$(BITS).o -c $^ $(CCFLAGS)
 
 clean:
 	rm -f *.o *.so *.a
