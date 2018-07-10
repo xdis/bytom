@@ -23,23 +23,24 @@ func legacyAlgorithm(bh, seed *bc.Hash) *bc.Hash {
 func cgoAlgorithm(bh, seed *bc.Hash) *bc.Hash {
 	p, err := plugin.Open("./plugin.so")
 	if err != nil {
-	panic(err)
+		panic("here")
+		panic(err)
 	}
 	v1, err := p.Lookup("BH")
 	if err != nil {
-	panic(err)
+		panic(err)
 	}
 	v2, err := p.Lookup("SEED")
 	if err != nil {
-	panic(err)
+		panic(err)
 	}
 	v3, err := p.Lookup("RES")
 	if err != nil {
-	panic(err)
+		panic(err)
 	}
 	f, err := p.Lookup("CgoAlgorithm")
 	if err != nil {
-	panic(err)
+		panic(err)
 	}
 
 	*v1.(*bc.Hash) = *bh
