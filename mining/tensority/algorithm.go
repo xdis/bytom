@@ -12,7 +12,7 @@ import (
 
 const maxAIHashCached = 64
 
-var UseSIMD = false
+var UseSIMD = true
 
 func legacyAlgorithm(bh, seed *bc.Hash) *bc.Hash {
 	cache := calcSeedCache(seed.Bytes())

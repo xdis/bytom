@@ -19,15 +19,15 @@ CCFLAGS += -std=c++11 -pthread -mavx2 -O3 -fopenmp -fPIC
 
 .PHONY: clean
 
-all:
+all: $(TARGET)
 	# OS=win 	   BITS=32 make $(TARGET)
 	# OS=win     BITS=64 make $(TARGET)
 	# OS=linux   BITS=32 make $(TARGET)
-	OS=linux   BITS=64 make $(TARGET)
+	# OS=linux   BITS=64 make $(TARGET)
 	go build -buildmode=plugin -o plugin.so main.go
 
 $(TARGET): $(TARGET).cpp
-	g++ -o $@_$(OS)$(BITS).o -c $^ $(CCFLAGS)  #--shared???
+	g++ -o $@.o -c $^ $(CCFLAGS)  #--shared???
 	# $(CC_PRE)-$(CC_MI)-$(CC_SUF) -o $@_$(OS)$(BITS).o -c $^ $(CCFLAGS)
 
 clean:
