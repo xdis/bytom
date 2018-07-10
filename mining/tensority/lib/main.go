@@ -19,20 +19,20 @@ import (
     "github.com/bytom/protocol/bc"
 )
 
-var bh *bc.Hash
-var seed *bc.Hash
-var res *bc.Hash
+var BH bc.Hash
+var SEED bc.Hash
+var RES bc.Hash
 
-func cgoAlgorithm() {
-    bhBytes := bh.Bytes()
-    sdBytes := seed.Bytes()
-
-    // Get the array pointers from the corresponding slices
+func CgoAlgorithm() {
+    // type conversion
+    bhBytes := BH.Bytes()
+    sdBytes := SEED.Bytes()
     bhPtr := (*C.uchar)(unsafe.Pointer(&bhBytes[0]))
     seedPtr := (*C.uchar)(unsafe.Pointer(&sdBytes[0]))
-
+    
+    // invoke c func
     resPtr := C.SimdTs(bhPtr, seedPtr)
 
-    resHsh := bc.NewHash(*(*[32]byte)(unsafe.Pointer(resPtr)))
-    res = &resHsh
+    // type conversion
+    RES = bc.NewHash(*(*[32]byte)(unsafe.Pointer(resPtr)))
 }
