@@ -35,12 +35,16 @@ type peer struct {
 	hash     *bc.Hash
 	banScore trust.DynamicBanScore
 
-	blocksProcessCh chan *BlocksMessage
+	headersProcessCh chan *[]types.BlockHeader
+	blocksProcessCh  chan *BlocksMessage
 
 	swPeer *p2p.Peer
 
-	knownTxs           *set.Set // Set of transaction hashes known to be known by this peer
-	knownBlocks        *set.Set // Set of block hashes known to be known by this peer
+	knownTxs    *set.Set // Set of transaction hashes known to be known by this peer
+	knownBlocks *set.Set // Set of block hashes known to be known by this peer
+
+	pendingHeaders bool // current query headers, waiting for reply
+	pendingBlocks  bool // current query blocks, waiting for reply
 }
 
 func newPeer(height uint64, hash *bc.Hash, Peer *p2p.Peer) *peer {
@@ -55,15 +59,16 @@ func newPeer(height uint64, hash *bc.Hash, Peer *p2p.Peer) *peer {
 	}
 
 	return &peer{
-		version:         defaultVersion,
-		services:        services,
-		id:              Peer.Key,
-		height:          height,
-		hash:            hash,
-		swPeer:          Peer,
-		knownTxs:        set.New(),
-		knownBlocks:     set.New(),
-		blocksProcessCh: make(chan *BlocksMessage, 0),
+		version:          defaultVersion,
+		services:         services,
+		id:               Peer.Key,
+		height:           height,
+		hash:             hash,
+		swPeer:           Peer,
+		knownTxs:         set.New(),
+		knownBlocks:      set.New(),
+		blocksProcessCh:  make(chan *BlocksMessage, 1),
+		headersProcessCh: make(chan *[]types.BlockHeader, 1),
 	}
 }
 
@@ -160,6 +165,22 @@ func (p *peer) MarkBlock(hash *bc.Hash) {
 		p.knownBlocks.Pop()
 	}
 	p.knownBlocks.Add(hash.String())
+}
+
+// SetPendingHeaders wait for headers reply
+func (p *peer) SetPendingHeaders(flag bool) {
+	p.mtx.Lock()
+	defer p.mtx.Unlock()
+
+	p.pendingHeaders = flag
+}
+
+// SetPendingBlocks wait for blocks reply
+func (p *peer) SetPendingBlocks(flag bool) {
+	p.mtx.Lock()
+	defer p.mtx.Unlock()
+
+	p.pendingBlocks = flag
 }
 
 // addBanScore increases the persistent and decaying ban score fields by the

@@ -55,7 +55,6 @@ type blockKeeper struct {
 	peers *peerSet
 
 	pendingProcessCh chan *blockPending
-	headersProcessCh chan *headersMsg
 
 	txsProcessCh   chan *txsNotify
 	quitReqBlockCh chan *string
@@ -72,7 +71,6 @@ func newBlockKeeper(chain *protocol.Chain, sw *p2p.Switch, peers *peerSet, quitR
 		peers:            peers,
 		pendingProcessCh: make(chan *blockPending, maxBlocksPending),
 		txsProcessCh:     make(chan *txsNotify, maxtxsPending),
-		headersProcessCh: make(chan *headersMsg, maxHeadersPending),
 		quitReqBlockCh:   quitReqBlockCh,
 		headerList:       list.New(),
 	}
@@ -191,7 +189,11 @@ func (bk *blockKeeper) BlockRequestWorker(peerID string, maxPeerHeight uint64) e
 	return nil
 }
 
-func (bk *blockKeeper) HeadersRequest(peerID string, locator []*bc.Hash) ([]types.BlockHeader, error) {
+func (bk *blockKeeper) HeadersRequest(peerID string, locator []*bc.Hash) (*[]types.BlockHeader, error) {
+	peer, ok := bk.peers.Peer(peerID)
+	if !ok {
+		return nil, errPeerDropped
+	}
 	stopHash := bk.nextCheckpoint().Hash
 	if err := bk.getHeaders(peerID, locator, &stopHash); err != nil {
 		log.Info("getHeaders err")
@@ -199,18 +201,15 @@ func (bk *blockKeeper) HeadersRequest(peerID string, locator []*bc.Hash) ([]type
 	}
 	retryTicker := time.Tick(requestRetryTicker)
 	syncWait := time.NewTimer(syncTimeout)
-	var headers []types.BlockHeader
+	for len(peer.headersProcessCh) > 0 {
+		<-peer.headersProcessCh
+	}
+	peer.SetPendingHeaders(true)
 
 	for {
 		select {
-		case pendingResponse := <-bk.headersProcessCh:
-			headers = pendingResponse.headers
-			if pendingResponse.peerID != peerID {
-				log.Warning("From different peer")
-				continue
-			}
-
-			return headers, nil
+		case pendingResponse := <-peer.headersProcessCh:
+			return pendingResponse, nil
 		case <-retryTicker:
 			if err := bk.getHeaders(peerID, locator, &stopHash); err != nil {
 				return nil, errReqHeaders
@@ -231,6 +230,10 @@ func (bk *blockKeeper) BlockFastSyncWorker(peerID string, nextCheckPoint *consen
 	current := bk.chain.BestBlockHeader()
 	currentHash := current.Hash()
 	lastHead := bk.headerList.Back()
+	peer, ok := bk.peers.Peer(peerID)
+	if !ok {
+		return errPeerDropped
+	}
 
 	if (bk.startHeader != nil && (bk.startHeader.Prev().Value.(*headerNode).hash.String() != currentHash.String())) || (lastHead == nil || (lastHead != nil && (lastHead.Value.(*headerNode).hash.String() != nextCheckPoint.Hash.String()))) {
 		bk.resetHeaderState(currentHash, current.Height)
@@ -239,20 +242,21 @@ func (bk *blockKeeper) BlockFastSyncWorker(peerID string, nextCheckPoint *consen
 		locator := bk.blockLocator(nil)
 		for {
 			headers, err := bk.HeadersRequest(peerID, locator)
+			peer.SetPendingHeaders(false)
 			if err != nil {
 				log.Info("HeadersRequest err")
 				return err
 			}
-			err, receivedCheckpoint := bk.handleHeadersMsg(peerID, headers)
+			err, receivedCheckpoint := bk.handleHeadersMsg(peerID, *headers)
 			if err != nil {
 				log.Info("handleHeadersMsg err")
 				return err
 			}
-			totalHeaders = append(totalHeaders, headers...)
+			totalHeaders = append(totalHeaders, *headers...)
 			if receivedCheckpoint {
 				break
 			}
-			finalHash := headers[len(headers)-1].Hash()
+			finalHash := (*headers)[len(*headers)-1].Hash()
 			locator = []*bc.Hash{&finalHash}
 		}
 		log.Infof("Downloading headers for blocks %d to "+"%d from peer %s", bk.chain.BestBlockHeight()+1, bk.nextCheckpoint().Height, peerID)
@@ -268,6 +272,7 @@ func (bk *blockKeeper) BlockFastSyncWorker(peerID string, nextCheckPoint *consen
 			e = e.Next()
 		}
 		blocks, err := bk.BlocksRequestWorker(peerID, headerList, headerList.Len())
+		peer.SetPendingBlocks(false)
 		if err != nil {
 			return err
 		}
@@ -373,6 +378,10 @@ func (bk *blockKeeper) BlocksRequestWorker(peerID string, headerList *list.List,
 	retryTicker := time.Tick(requestRetryTicker)
 	syncWait := time.NewTimer(syncTimeout)
 	totalBlocks := make([]*types.Block, num)
+	for len(peer.blocksProcessCh) > 0 {
+		<-peer.blocksProcessCh
+	}
+	peer.SetPendingBlocks(true)
 
 	for {
 		select {

@@ -252,8 +252,14 @@ func (pr *ProtocolReactor) Receive(chID byte, src *p2p.Peer, msgBytes []byte) {
 
 	case *HeadersMessage:
 		log.WithFields(log.Fields{"peerID": src.Key, "msg": "Headers Message"}).Info("Response Message")
-		hmsg := &headersMsg{headers: msg.Headers, peerID: src.Key}
-		pr.blockKeeper.headersProcessCh <- hmsg
+		peer, ok := pr.peers.Peer(src.Key)
+		if ok {
+			if peer.pendingHeaders == false {
+				pr.sw.StopPeerGracefully(peer.swPeer)
+			} else {
+				peer.headersProcessCh <- &msg.Headers
+			}
+		}
 
 	case *GetBlocksMessage:
 		log.WithFields(log.Fields{"peerID": src.Key, "msg": "Get Blocks"}).Info("Receive request")
@@ -261,9 +267,13 @@ func (pr *ProtocolReactor) Receive(chID byte, src *p2p.Peer, msgBytes []byte) {
 
 	case *BlocksMessage:
 		log.WithFields(log.Fields{"peerID": src.Key, "msg": "Blocks Message"}).Info("Response Message")
-		peer, _ := pr.blockKeeper.peers.Peer(src.Key)
-		if peer != nil {
-			peer.blocksProcessCh <- msg
+		peer, ok := pr.blockKeeper.peers.Peer(src.Key)
+		if ok {
+			if peer.pendingBlocks == false {
+				pr.sw.StopPeerGracefully(peer.swPeer)
+			} else {
+				peer.blocksProcessCh <- msg
+			}
 		}
 
 	default:
